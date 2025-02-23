@@ -49,21 +49,6 @@ class SimpleDecisionTree:
         self.min_samples_split = min_samples_split
         self.tree = None
 
-    def fit(self, X, y):
-        """
-        決定木のトレーニングを行う
-        
-        Parameters:
-        -----------
-        X : array-like
-            トレーニングデータの特徴量
-        y : array-like
-            トレーニングデータのターゲット値
-        """
-        self.n_classes = len(np.unique(y))
-        self.n_features = X.shape[1]
-        self.tree = self._split_node(X, y, depth=0)
-
     def _find_best_split(self, X, y, sample_weight):
         """
         最適な分割点を見つける
@@ -91,7 +76,7 @@ class SimpleDecisionTree:
             
             for threshold in feature_values:
                 # データを分割
-                left_mask = X[:, feature_idx] <= threshold
+                left_mask = X[:, feature_idx:feature_idx+1].flatten() <= threshold
                 right_mask = ~left_mask
                 
                 if np.sum(left_mask) == 0 or np.sum(right_mask) == 0:
@@ -164,7 +149,7 @@ class SimpleDecisionTree:
         feature_idx = best_split['feature_idx']
         threshold = best_split['threshold']
         
-        left_mask = X[:, feature_idx] <= threshold
+        left_mask = X[:, feature_idx:feature_idx+1].flatten() <= threshold
         right_mask = ~left_mask
         
         # 子ノードを再帰的に構築
@@ -215,7 +200,7 @@ class SimpleDecisionTree:
         if 'value' in node:
             return node['value']
             
-        if x[node['feature_idx']] <= node['threshold']:
+        if x[node['feature_idx']:node['feature_idx']+1][0] <= node['threshold']:
             return self._predict_single(x, node['left'])
         else:
             return self._predict_single(x, node['right'])
