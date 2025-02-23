@@ -236,7 +236,6 @@ class SimpleDecisionTree:
         """
         if self.tree is None:
             raise Exception("モデルが学習されていません。先にfitメソッドを実行してください。")
-            
-        # 予測の実装（簡略化のため、単純な実装としています）
-        predictions = np.array([self.tree['value']] * len(X))
-        return predictions
+        
+        # 各サンプルに対して再帰的に予測を行う
+        return np.array([self._predict_single(x, self.tree) for x in X])
