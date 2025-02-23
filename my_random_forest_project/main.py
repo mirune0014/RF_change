@@ -1,6 +1,6 @@
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score, classification_report
 import numpy as np
 
 from random_forest import SimpleRandomForest
@@ -29,10 +29,17 @@ def main():
     print("テストデータで予測を行います...")
     y_pred = rf.predict(X_test)
     
-    # 正解率の計算と表示
+    # 評価指標の計算と表示
     accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average='macro')
+    
     print(f"\n結果:")
     print(f"正解率: {accuracy:.4f}")
+    print(f"F1スコア（マクロ平均）: {f1:.4f}")
+    
+    # 詳細な性能レポートを表示
+    print("\n詳細な性能評価:")
+    print(classification_report(y_test, y_pred))
     
     # クラスごとの予測数を表示
     unique, counts = np.unique(y_pred, return_counts=True)

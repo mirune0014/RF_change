@@ -1,8 +1,9 @@
 import numpy as np
+from sklearn.metrics import f1_score
 from decision_tree import SimpleDecisionTree
 
 class SimpleRandomForest:
-    def __init__(self, n_estimators=10, max_depth=None, min_samples_split=2):
+    def __init__(self, n_estimators=10, max_depth=None, min_samples_split=2, epsilon=1e-10):
         """
         ランダムフォレストの初期化
         
@@ -26,7 +27,48 @@ class SimpleRandomForest:
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
+        self.epsilon = epsilon  # 0除算回避用の微小値
         self.trees = []
+        self.tree_weights = []  # 各決定木の重み
+        self.feature_indices_list = []  # 各決定木の特徴量インデックス
+
+    def _calculate_oob_score(self, tree, X, y, bootstrap_indices, feature_indices):
+        """
+        Out-of-Bag (OOB)スコアを計算する
+
+        Parameters:
+        -----------
+        tree : SimpleDecisionTree
+            評価対象の決定木
+        X : array-like
+            元の特徴量データ
+        y : array-like
+            元のターゲットデータ
+        bootstrap_indices : array-like
+            ブートストラップサンプルのインデックス
+        feature_indices : array-like
+            使用した特徴量のインデックス
+
+        Returns:
+        --------
+        float
+            F1スコア（少数クラスの識別性能を評価）
+        """
+        # OOBサンプルのインデックスを取得
+        n_samples = X.shape[0]
+        oob_indices = np.array([i for i in range(n_samples) if i not in bootstrap_indices])
+        
+        if len(oob_indices) == 0:  # OOBサンプルがない場合
+            return 0.0
+            
+        # OOBサンプルで予測
+        X_oob = X[oob_indices]
+        X_oob_subset = X_oob[:, feature_indices]
+        y_oob = y[oob_indices]
+        y_pred = tree.predict(X_oob_subset)
+        
+        # F1スコアを計算（マクロ平均を使用して全クラスを均等に評価）
+        return f1_score(y_oob, y_pred, average='macro')
 
     def fit(self, X, y):
         """
@@ -84,13 +126,23 @@ class SimpleRandomForest:
             
             # 重み付きで学習を実行
             tree.fit(X_subset, y_bootstrap, sample_weight=bootstrap_weights)
-            # 特徴量インデックスを保存
-            tree.feature_indices = feature_indices
+            
+            # OOBスコアを計算
+            oob_score = self._calculate_oob_score(tree, X, y, bootstrap_indices, feature_indices)
+            tree_weight = oob_score + self.epsilon  # 0除算回避
+            
+            # 木と関連情報を保存
             self.trees.append(tree)
+            self.tree_weights.append(tree_weight)
+            self.feature_indices_list.append(feature_indices)
+            
+        # 重みを正規化
+        self.tree_weights = np.array(self.tree_weights)
+        self.tree_weights = self.tree_weights / np.sum(self.tree_weights)
 
     def predict(self, X):
         """
-        新しいデータの予測を行う
+        新しいデータの予測を行う（加重多数決による）
         
         Parameters:
         -----------
@@ -100,17 +152,28 @@ class SimpleRandomForest:
         Returns:
         --------
         array-like
-            予測されたクラス（多数決による）
+            予測されたクラス
         """
-        predictions = []
-        for tree in self.trees:
-            # 各決定木で使用した特徴量のみを使用
-            X_subset = X[:, tree.feature_indices]
-            predictions.append(tree.predict(X_subset))
+        n_samples = X.shape[0]
+        predictions = np.zeros((n_samples, len(self.trees)))
         
-        predictions = np.array(predictions)
-        # 各サンプルごとに多数決を取る
-        return np.array([
-            np.argmax(np.bincount(predictions[:, i]))
-            for i in range(X.shape[0])
-        ])
+        # 各決定木での予測を取得
+        for i, (tree, feature_indices) in enumerate(zip(self.trees, self.feature_indices_list)):
+            X_subset = X[:, feature_indices]
+            predictions[:, i] = tree.predict(X_subset)
+        
+        # 加重多数決による最終予測
+        final_predictions = []
+        for i in range(n_samples):
+            # 各サンプルについて、クラスごとの重み付き投票を集計
+            sample_predictions = predictions[i]
+            unique_classes = np.unique(sample_predictions)
+            class_votes = {cls: 0.0 for cls in unique_classes}
+            
+            for tree_idx, pred_class in enumerate(sample_predictions):
+                class_votes[pred_class] += self.tree_weights[tree_idx]
+            
+            # 最大の重み合計を持つクラスを選択
+            final_predictions.append(max(class_votes.items(), key=lambda x: x[1])[0])
+            
+        return np.array(final_predictions)
