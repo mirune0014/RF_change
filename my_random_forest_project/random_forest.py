@@ -78,12 +78,14 @@ class SimpleRandomForest:
             bootstrap_weights = base_weights[bootstrap_indices]
             
             # 特徴量のサンプリング
-            n_features_subset = int(np.sqrt(n_features))
+            n_features_subset = max(1, int(np.sqrt(n_features)))
             feature_indices = np.random.choice(n_features, size=n_features_subset, replace=False)
             X_subset = X_bootstrap[:, feature_indices]
             
             # 重み付きで学習を実行
             tree.fit(X_subset, y_bootstrap, sample_weight=bootstrap_weights)
+            # 特徴量インデックスを保存
+            tree.feature_indices = feature_indices
             self.trees.append(tree)
 
     def predict(self, X):
@@ -100,7 +102,13 @@ class SimpleRandomForest:
         array-like
             予測されたクラス（多数決による）
         """
-        predictions = np.array([tree.predict(X) for tree in self.trees])
+        predictions = []
+        for tree in self.trees:
+            # 各決定木で使用した特徴量のみを使用
+            X_subset = X[:, tree.feature_indices]
+            predictions.append(tree.predict(X_subset))
+        
+        predictions = np.array(predictions)
         # 各サンプルごとに多数決を取る
         return np.array([
             np.argmax(np.bincount(predictions[:, i]))
