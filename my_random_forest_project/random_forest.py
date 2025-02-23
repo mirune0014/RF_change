@@ -38,14 +38,6 @@ class SimpleRandomForest:
             トレーニングデータの特徴量
         y : array-like
             トレーニングデータのターゲット値
-        
-        Note:
-        -----
-        future_implementation:
-        1. ブートストラップサンプリング
-           - データセットからランダムにサンプリング（重複あり）
-        2. 特徴量のサンプリング
-           - 各決定木で使用する特徴量をランダムに選択
         """
         n_samples, n_features = X.shape
         
@@ -53,15 +45,16 @@ class SimpleRandomForest:
         unique_classes, class_counts = np.unique(y, return_counts=True)
         min_class_count = np.min(class_counts)
         
-        # 各クラスの重みを設定（少数クラスは2倍の確率）
-        sample_weights = np.ones(n_samples)
-        for class_label in unique_classes:
-            class_mask = (y == class_label)
-            if np.sum(class_mask) == min_class_count:
-                sample_weights[class_mask] = 2.0
+        # クラスごとの重みを設定（少数クラスは2倍の重み）
+        class_weights = {}
+        for class_label, count in zip(unique_classes, class_counts):
+            if count == min_class_count:
+                class_weights[class_label] = 2.0
+            else:
+                class_weights[class_label] = 1.0
         
-        # 重みの正規化
-        sample_weights = sample_weights / np.sum(sample_weights)
+        # 各サンプルの重みを初期化
+        base_weights = np.array([class_weights[label] for label in y])
         
         # 決定木を作成し、学習を行う
         for _ in range(self.n_estimators):
@@ -69,6 +62,9 @@ class SimpleRandomForest:
                 max_depth=self.max_depth,
                 min_samples_split=self.min_samples_split
             )
+            
+            # ブートストラップサンプリングのための重みを正規化
+            sample_weights = base_weights / np.sum(base_weights)
             
             # 重み付きブートストラップサンプリング
             bootstrap_indices = np.random.choice(
@@ -79,13 +75,15 @@ class SimpleRandomForest:
             )
             X_bootstrap = X[bootstrap_indices]
             y_bootstrap = y[bootstrap_indices]
+            bootstrap_weights = base_weights[bootstrap_indices]
             
             # 特徴量のサンプリング
             n_features_subset = int(np.sqrt(n_features))
             feature_indices = np.random.choice(n_features, size=n_features_subset, replace=False)
             X_subset = X_bootstrap[:, feature_indices]
             
-            tree.fit(X_subset, y_bootstrap)
+            # 重み付きで学習を実行
+            tree.fit(X_subset, y_bootstrap, sample_weight=bootstrap_weights)
             self.trees.append(tree)
 
     def predict(self, X):
